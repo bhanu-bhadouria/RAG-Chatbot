@@ -2,8 +2,9 @@ from openai import OpenAI
 import faiss
 import numpy as np
 import os
+import streamlit as st
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 def chunk_text(text, chunk_size=500, overlap=100):
     chunks = []
