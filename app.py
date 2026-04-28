@@ -33,10 +33,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- LOAD PIPELINE ----------
-
+# ---------- CHAT HISTORY ----------
 def format_chat_history(messages, max_turns=4):
-    history = messages[-max_turns*2:]  # last N turns
+    history = messages[-max_turns * 2:]
 
     formatted = ""
     for msg in history:
@@ -45,22 +44,25 @@ def format_chat_history(messages, max_turns=4):
 
     return formatted
 
-@st.cache_resource
-def load_pipeline():
-    text = load_pdf("Rahul Sharma TEST Resume PDF.pdf")
+
+# ---------- PDF PROCESSING ----------
+def process_pdf(file):
+    text = load_pdf(file)
     chunks = chunk_text(text)
+
     index = build_index(chunks)
     chunk_map = dict(enumerate(chunks))
     bm25, texts = build_bm25(chunks)
+
     return index, chunk_map, bm25, texts
 
-
-index, chunk_map, bm25, texts = load_pipeline()
 
 # ---------- SIDEBAR ----------
 with st.sidebar:
     st.title("🧠 RAG Chatbot")
     st.markdown("Hybrid Search + PDF")
+
+    uploaded_file = st.file_uploader("📄 Upload a PDF", type="pdf")
 
     if st.button("🗑️ New Chat"):
         st.session_state.messages = []
@@ -68,14 +70,39 @@ with st.sidebar:
     st.markdown("---")
     st.caption("Built with FAISS + BM25")
 
+
 # ---------- SESSION STATE ----------
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+if "pipeline" not in st.session_state:
+    st.session_state.pipeline = None
+
+# ---------- HANDLE PDF UPLOAD ----------
+if uploaded_file is not None:
+    if st.session_state.get("current_file") != uploaded_file.name:
+        with st.spinner("Processing PDF..."):
+            pipeline = process_pdf(uploaded_file)
+
+            st.session_state.pipeline = pipeline
+            st.session_state.current_file = uploaded_file.name
+            st.session_state.messages = []  # reset chat
+
+        st.success(f"Loaded: {uploaded_file.name}")
+
+# ---------- CHECK PIPELINE ----------
+if st.session_state.pipeline is None:
+    st.warning("Please upload a PDF to start.")
+    st.stop()
+
+index, chunk_map, bm25, texts = st.session_state.pipeline
+
 
 # ---------- DISPLAY CHAT ----------
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+
 
 # ---------- INPUT ----------
 query = st.chat_input("Message...")
@@ -87,7 +114,7 @@ if query:
     with st.chat_message("user"):
         st.markdown(query)
 
-    # RETRIEVAL
+    # RETRIEVAL (with memory)
     search_query = format_chat_history(st.session_state.messages) + " " + query
 
     context_chunks = hybrid_retrieve(
@@ -105,10 +132,11 @@ if query:
     chat_history = format_chat_history(st.session_state.messages)
 
     answer = generate_answer(query, context, chat_history)
+
     if not answer:
         answer = "⚠️ No response generated."
 
-    # ASSISTANT MESSAGE (typing effect)
+    # ASSISTANT MESSAGE
     with st.chat_message("assistant"):
         placeholder = st.empty()
         full_text = ""
@@ -118,7 +146,7 @@ if query:
             placeholder.markdown(full_text)
             time.sleep(0.015)
 
-        # CONTEXT (hidden like ChatGPT tools)
+        # CONTEXT
         with st.expander("📄 Retrieved Context"):
             for c in context_chunks:
                 st.write(c)

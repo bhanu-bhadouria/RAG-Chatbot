@@ -1,7 +1,7 @@
 import fitz  # PyMuPDF
 
-def load_pdf(path):
-    doc = fitz.open(path)
+def load_pdf(file):
+    doc = fitz.open(stream=file.read(), filetype="pdf")
     text = ""
 
     for page in doc:
